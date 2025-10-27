@@ -50,6 +50,63 @@ def main():
         name = model.get("name") or model.get("display_name") or model_id
         print(f"{index}. {name} ({model_id})")
 
+    choice = input("\nPick a model number (or press Enter to exit): ").strip()
+
+    if not choice:
+        print("No model selected.")
+        return
+
+    try:
+        choice_index = int(choice) - 1
+    except ValueError:
+        print("Please enter a number from the list.")
+        return
+
+    if choice_index < 0 or choice_index >= len(free_models):
+        print("That number is outside the list.")
+        return
+
+    selected_model = free_models[choice_index]
+    selected_id = selected_model.get("id")
+    
+    print(f"\nSelected {selected_id}\n")
+
+    question = input("Enter your question for the model: ").strip()
+
+    if not question:
+        print("No question provided.")
+        return
+
+    try:
+        completion = client.chat.completions.create(
+            model=selected_id,
+            messages=[{"role": "user", "content": question}],
+        )
+    except Exception as error:
+        print(f"Could not get a reply from {selected_id}: {error}")
+        return
+
+    try:
+        first_choice = completion.choices[0]
+    except (AttributeError, IndexError):
+        print("The model returned an empty response.")
+        return
+
+    message = getattr(first_choice, "message", None)
+    reply = ""
+
+    if isinstance(message, dict):
+        reply = message.get("content", "")
+    else:
+        reply = getattr(message, "content", "")
+
+    if not reply:
+        print("The model did not include any text in the reply.")
+        return
+
+    print("\nModel reply:\n")
+    print(reply)
+
 
 if __name__ == "__main__":
     main()
