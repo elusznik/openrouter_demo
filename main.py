@@ -77,6 +77,40 @@ def main():
         print("No question provided.")
         return
 
+    stream_answer = input("Stream the response as it arrives? [Y/n]: ").strip().lower()
+    use_stream = stream_answer != "n"
+
+    if use_stream:
+        try:
+            stream = client.chat.completions.create(
+                model=selected_id,
+                messages=[{"role": "user", "content": question}],
+                stream=True,
+            )
+        except Exception as error:
+            print(f"Could not start streaming from {selected_id}: {error}")
+            return
+
+        print("\nModel reply (streaming):\n")
+
+        for chunk in stream:
+            choices = getattr(chunk, "choices", [])
+            if not choices:
+                continue
+
+            delta = getattr(choices[0], "delta", None)
+
+            if isinstance(delta, dict):
+                piece = delta.get("content") or ""
+            else:
+                piece = getattr(delta, "content", "") or ""
+
+            if piece:
+                print(piece, end="", flush=True)
+
+        print("\n")
+        return
+
     try:
         completion = client.chat.completions.create(
             model=selected_id,
