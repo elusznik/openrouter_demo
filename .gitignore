@@ -8,3 +8,6 @@ wheels/
 
 # Virtual environments
 .venv
+
+# secrets
+api_key.txt
