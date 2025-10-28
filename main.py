@@ -71,75 +71,93 @@ def main():
     
     print(f"\nSelected {selected_id}\n")
 
-    question = input("Enter your question for the model: ").strip()
-
-    if not question:
-        print("No question provided.")
-        return
-
     stream_answer = input("Stream the response as it arrives? [Y/n]: ").strip().lower()
     use_stream = stream_answer != "n"
 
-    if use_stream:
-        try:
-            stream = client.chat.completions.create(
-                model=selected_id,
-                messages=[{"role": "user", "content": question}],
-                stream=True,
-            )
-        except Exception as error:
-            print(f"Could not start streaming from {selected_id}: {error}")
-            return
+    messages = []
+    print("Type your message (or 'exit' to quit).")
 
-        print("\nModel reply (streaming):\n")
+    while True:
+        question = input("You: ").strip()
 
-        for chunk in stream:
-            choices = getattr(chunk, "choices", [])
-            if not choices:
+        if not question:
+            print("Please enter some text or 'exit'.")
+            continue
+
+        if question.lower() in {"exit", "quit"}:
+            print("Conversation ended.")
+            break
+
+        messages.append({"role": "user", "content": question})
+
+        if use_stream:
+            try:
+                stream = client.chat.completions.create(
+                    model=selected_id,
+                    messages=messages,
+                    stream=True,
+                )
+            except Exception as error:
+                print(f"Could not start streaming from {selected_id}: {error}")
+                messages.pop()  # Remove the user message so history stays clean.
                 continue
 
-            delta = getattr(choices[0], "delta", None)
+            print("\nModel reply (streaming):\n")
+            reply_parts = []
 
-            if isinstance(delta, dict):
-                piece = delta.get("content") or ""
+            for chunk in stream:
+                choices = getattr(chunk, "choices", [])
+                if not choices:
+                    continue
+
+                delta = getattr(choices[0], "delta", None)
+
+                if isinstance(delta, dict):
+                    piece = delta.get("content") or ""
+                else:
+                    piece = getattr(delta, "content", "") or ""
+
+                if piece:
+                    print(piece, end="", flush=True)
+                    reply_parts.append(piece)
+
+            reply = "".join(reply_parts).strip()
+            print("\n")
+        else:
+            try:
+                completion = client.chat.completions.create(
+                    model=selected_id,
+                    messages=messages,
+                )
+            except Exception as error:
+                print(f"Could not get a reply from {selected_id}: {error}")
+                messages.pop()  # Remove the user message on failure.
+                continue
+
+            try:
+                first_choice = completion.choices[0]
+            except (AttributeError, IndexError):
+                print("The model returned an empty response.")
+                messages.pop()
+                continue
+
+            message = getattr(first_choice, "message", None)
+
+            if isinstance(message, dict):
+                reply = message.get("content", "")
             else:
-                piece = getattr(delta, "content", "") or ""
+                reply = getattr(message, "content", "")
 
-            if piece:
-                print(piece, end="", flush=True)
+            if not reply:
+                print("The model did not include any text in the reply.")
+                messages.pop()
+                continue
 
-        print("\n")
-        return
+            print("\nModel reply:\n")
+            print(reply)
 
-    try:
-        completion = client.chat.completions.create(
-            model=selected_id,
-            messages=[{"role": "user", "content": question}],
-        )
-    except Exception as error:
-        print(f"Could not get a reply from {selected_id}: {error}")
-        return
-
-    try:
-        first_choice = completion.choices[0]
-    except (AttributeError, IndexError):
-        print("The model returned an empty response.")
-        return
-
-    message = getattr(first_choice, "message", None)
-    reply = ""
-
-    if isinstance(message, dict):
-        reply = message.get("content", "")
-    else:
-        reply = getattr(message, "content", "")
-
-    if not reply:
-        print("The model did not include any text in the reply.")
-        return
-
-    print("\nModel reply:\n")
-    print(reply)
+        if reply:
+            messages.append({"role": "assistant", "content": reply})
 
 
 if __name__ == "__main__":
