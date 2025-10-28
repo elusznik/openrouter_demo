@@ -69,6 +69,21 @@ def extract_reasoning_text(response):
     return reasoning_chunks
 
 
+def extract_event_text(delta):
+    """Extract plain text from streaming delta payloads."""
+    if isinstance(delta, str):
+        return delta
+
+    text_attr = getattr(delta, "text", None)
+    if text_attr:
+        return text_attr
+
+    if isinstance(delta, dict):
+        return delta.get("text") or delta.get("value", "")
+
+    return ""
+
+
 def main():
     with open("api_key.txt", "r", encoding="utf-8") as file:
         api_key = file.read().strip()
@@ -148,11 +163,16 @@ def main():
         messages.append({"role": "user", "content": question})
 
         latest_response = None
+        cached_reasoning_chunks = []
+        printed_reasoning = False
 
         if use_stream:
             try:
-                print("\nModel reply (streaming):\n")
+                print()
                 reply_parts = []
+                reasoning_parts = []
+                displayed_reasoning = False
+                displayed_reply = False
 
                 with client.responses.stream(
                     model=selected_id,
@@ -160,30 +180,37 @@ def main():
                     reasoning={"effort": "high","exclude": False},
                 ) as stream:
                     for event in stream:
-                        if event.type == "response.output_text.delta":
-                            delta = getattr(event, "delta", None)
-                            piece = ""
+                        if event.type == "response.reasoning_text.delta":
+                            piece = extract_event_text(getattr(event, "delta", None))
+                            if piece:
+                                if not displayed_reasoning:
+                                    print("Reasoning (streaming):\n")
+                                    displayed_reasoning = True
+                                print(piece, end="", flush=True)
+                                reasoning_parts.append(piece)
+                            continue
 
-                            if isinstance(delta, str):
-                                piece = delta
-                            else:
-                                text_attr = getattr(delta, "text", None)
-                                if text_attr:
-                                    piece = text_attr
-                                elif isinstance(delta, dict):
-                                    piece = delta.get("text") or delta.get("value", "")
+                        if event.type == "response.output_text.delta":
+                            piece = extract_event_text(getattr(event, "delta", None))
 
                             if piece:
+                                if not displayed_reply:
+                                    if displayed_reasoning:
+                                        print("\n")
+                                    print("\nModel reply (streaming):\n")
+                                    displayed_reply = True
                                 print(piece, end="", flush=True)
                                 reply_parts.append(piece)
 
                     final_response = stream.get_final_response()
 
+                if displayed_reply or displayed_reasoning:
+                    print("\n")
+
                 reply = "".join(reply_parts).strip()
                 if not reply:
                     reply = extract_text_from_response(final_response)
 
-                print("\n")
             except Exception as error:
                 print(f"Could not start streaming from {selected_id}: {error}")
                 messages.pop()  # Remove the user message so history stays clean.
@@ -195,6 +222,8 @@ def main():
                 continue
 
             latest_response = final_response
+            cached_reasoning_chunks = reasoning_parts or extract_reasoning_text(final_response)
+            printed_reasoning = displayed_reasoning
         else:
             try:
                 response = client.responses.create(
@@ -206,6 +235,16 @@ def main():
                 print(f"Could not get a reply from {selected_id}: {error}")
                 messages.pop()  # Remove the user message on failure.
                 continue
+
+            reasoning_chunks = extract_reasoning_text(response)
+            cached_reasoning_chunks = reasoning_chunks
+
+            if reasoning_chunks:
+                print("\nReasoning:\n")
+                for chunk in reasoning_chunks:
+                    print(chunk)
+                    print()
+                printed_reasoning = True
 
             reply = extract_text_from_response(response)
 
@@ -223,12 +262,15 @@ def main():
             messages.append({"role": "assistant", "content": reply})
 
         if latest_response:
-            reasoning_chunks = extract_reasoning_text(latest_response)
-            if reasoning_chunks:
-                print("Reasoning trace:\n")
-                for chunk in reasoning_chunks:
-                    print(chunk)
-                    print()
+            if not printed_reasoning:
+                if not cached_reasoning_chunks:
+                    cached_reasoning_chunks = extract_reasoning_text(latest_response)
+                if cached_reasoning_chunks:
+                    print("Reasoning:\n")
+                    for chunk in cached_reasoning_chunks:
+                        print(chunk)
+                        print()
+                    printed_reasoning = True
 
             show_json = input("Show raw JSON response? [y/N]: ").strip().lower()
             if show_json == "y":
