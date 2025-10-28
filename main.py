@@ -1,3 +1,5 @@
+import json
+
 from openai import OpenAI
 
 
@@ -10,6 +12,61 @@ def to_dict(model):
     if isinstance(model, dict):
         return model
     return getattr(model, "__dict__", {})
+
+
+def extract_text_from_response(response):
+    """Gather plain text content from a Responses API result."""
+    if not response:
+        return ""
+
+    output_text = getattr(response, "output_text", None)
+    if output_text:
+        return output_text.strip()
+
+    parts = []
+    output_items = getattr(response, "output", None) or []
+
+    for item in output_items:
+        content_list = getattr(item, "content", None) or []
+
+        for part in content_list:
+            text_value = getattr(part, "text", None)
+            if text_value:
+                parts.append(text_value)
+                continue
+
+            if isinstance(part, dict) and part.get("type") == "output_text":
+                part_text = part.get("text")
+                if part_text:
+                    parts.append(part_text)
+
+    return "".join(parts).strip()
+
+
+def response_to_json(response):
+    """Return a JSON string for any response-like object."""
+    return json.dumps(to_dict(response), indent=2, sort_keys=True)
+
+
+def extract_reasoning_text(response):
+    """Collect reasoning text segments from a Responses API result."""
+    if not response:
+        return []
+
+    data = to_dict(response)
+    output_items = data.get("output", [])
+    reasoning_chunks = []
+
+    for item in output_items:
+        if item.get("type") != "reasoning":
+            continue
+
+        for part in item.get("content", []) or []:
+            text = part.get("text")
+            if text:
+                reasoning_chunks.append(text)
+
+    return reasoning_chunks
 
 
 def main():
@@ -90,63 +147,67 @@ def main():
 
         messages.append({"role": "user", "content": question})
 
+        latest_response = None
+
         if use_stream:
             try:
-                stream = client.chat.completions.create(
+                print("\nModel reply (streaming):\n")
+                reply_parts = []
+
+                with client.responses.stream(
                     model=selected_id,
-                    messages=messages,
-                    stream=True,
-                )
+                    input=messages,
+                    reasoning={"effort": "high","exclude": False},
+                ) as stream:
+                    for event in stream:
+                        if event.type == "response.output_text.delta":
+                            delta = getattr(event, "delta", None)
+                            piece = ""
+
+                            if isinstance(delta, str):
+                                piece = delta
+                            else:
+                                text_attr = getattr(delta, "text", None)
+                                if text_attr:
+                                    piece = text_attr
+                                elif isinstance(delta, dict):
+                                    piece = delta.get("text") or delta.get("value", "")
+
+                            if piece:
+                                print(piece, end="", flush=True)
+                                reply_parts.append(piece)
+
+                    final_response = stream.get_final_response()
+
+                reply = "".join(reply_parts).strip()
+                if not reply:
+                    reply = extract_text_from_response(final_response)
+
+                print("\n")
             except Exception as error:
                 print(f"Could not start streaming from {selected_id}: {error}")
                 messages.pop()  # Remove the user message so history stays clean.
                 continue
 
-            print("\nModel reply (streaming):\n")
-            reply_parts = []
+            if not reply:
+                print("The model did not include any text in the reply.")
+                messages.pop()
+                continue
 
-            for chunk in stream:
-                choices = getattr(chunk, "choices", [])
-                if not choices:
-                    continue
-
-                delta = getattr(choices[0], "delta", None)
-
-                if isinstance(delta, dict):
-                    piece = delta.get("content") or ""
-                else:
-                    piece = getattr(delta, "content", "") or ""
-
-                if piece:
-                    print(piece, end="", flush=True)
-                    reply_parts.append(piece)
-
-            reply = "".join(reply_parts).strip()
-            print("\n")
+            latest_response = final_response
         else:
             try:
-                completion = client.chat.completions.create(
+                response = client.responses.create(
                     model=selected_id,
-                    messages=messages,
+                    input=messages,
+                    reasoning={"effort": "high"},
                 )
             except Exception as error:
                 print(f"Could not get a reply from {selected_id}: {error}")
                 messages.pop()  # Remove the user message on failure.
                 continue
 
-            try:
-                first_choice = completion.choices[0]
-            except (AttributeError, IndexError):
-                print("The model returned an empty response.")
-                messages.pop()
-                continue
-
-            message = getattr(first_choice, "message", None)
-
-            if isinstance(message, dict):
-                reply = message.get("content", "")
-            else:
-                reply = getattr(message, "content", "")
+            reply = extract_text_from_response(response)
 
             if not reply:
                 print("The model did not include any text in the reply.")
@@ -156,8 +217,24 @@ def main():
             print("\nModel reply:\n")
             print(reply)
 
+            latest_response = response
+
         if reply:
             messages.append({"role": "assistant", "content": reply})
+
+        if latest_response:
+            reasoning_chunks = extract_reasoning_text(latest_response)
+            if reasoning_chunks:
+                print("Reasoning trace:\n")
+                for chunk in reasoning_chunks:
+                    print(chunk)
+                    print()
+
+            show_json = input("Show raw JSON response? [y/N]: ").strip().lower()
+            if show_json == "y":
+                print("\nRaw response JSON:\n")
+                print(response_to_json(latest_response))
+                print()
 
 
 if __name__ == "__main__":
