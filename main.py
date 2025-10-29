@@ -216,12 +216,12 @@ def main() -> None:
         if reasoning_chunks:
             inner = "\n".join(reasoning_chunks).strip()
             if inner:
-                reasoning_text_for_history = f"<think>{inner}</think>"
+                reasoning_text_for_history = inner
 
         if summary_chunks:
             inner_summary = "\n".join(summary_chunks).strip()
             if inner_summary:
-                summary_text_for_history = f"<summary>{inner_summary}</summary>"
+                summary_text_for_history = inner_summary
 
         show_json = input("Show raw JSON response? [y/N]: ").strip().lower()
         if show_json == "y":
