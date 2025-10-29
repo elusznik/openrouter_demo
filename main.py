@@ -223,7 +223,8 @@ def main() -> None:
             if inner_summary:
                 summary_text_for_history = inner_summary
 
-        show_json = input("Show raw JSON response? [y/N]: ").strip().lower()
+        show_json = ""
+        # show_json = input("Show raw JSON response? [y/N]: ").strip().lower()
         if show_json == "y":
             print("\nRaw response JSON:\n")
             print(response_to_json(response))
