@@ -185,7 +185,7 @@ def main() -> None:
         reasoning_chunks = extract_reasoning_text(response)
 
         if reasoning_chunks:
-            #print("\nReasoning:\n")
+            # print("\nReasoning:\n")
             print("<think>")
             for chunk in reasoning_chunks:
                 print(chunk)
@@ -195,7 +195,7 @@ def main() -> None:
         summary_chunks = extract_reasoning_summary(response)
 
         if summary_chunks:
-            #print("Reasoning summary:\n")
+            # print("Reasoning summary:\n")
             for chunk in summary_chunks:
                 print(chunk)
                 print()
@@ -207,7 +207,7 @@ def main() -> None:
             messages.pop()
             continue
 
-        #print("\nModel reply:\n")
+        # print("\nModel reply:\n")
         print(reply_text)
 
         reasoning_text_for_history = ""
