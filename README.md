@@ -3,7 +3,7 @@
 - Prompts you to pick a model number, then chat back and forth using the OpenRouter-compatible Responses API. Reasoning defaults are pre-set in code.
 
 ## Setup
-- Ensure Python 3.11+ (as specified in `pyproject.toml`).
+- Ensure Python 3.14+ (as specified in `pyproject.toml`).
 - Install dependencies using your preferred tool (e.g., `uv sync` or `pip install -r requirements.txt`).
 - Set your OpenRouter API key as an environment variable named `OPENROUTER_API_KEY`. Alternatively, save it in a file named `api_key.txt` in the same directory as `main.py`.
 
